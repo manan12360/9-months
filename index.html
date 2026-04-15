@@ -10,7 +10,6 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--black); color: var(--white); overflow: hidden; font-family: 'Montserrat', sans-serif; -webkit-font-smoothing: antialiased; }
 
         .screen { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; opacity: 0; visibility: hidden; z-index: 10; }
-        
         .active { opacity: 1; visibility: visible; transition: opacity 2.5s ease-in-out; }
         .fade-out { opacity: 0 !important; transition: opacity 2s ease-in-out; }
 
@@ -46,11 +45,13 @@
         @keyframes twinkle { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } }
     </style>
 </head>
-<body onclick="initiate()">
+<body id="body-main">
 
-    <audio id="bg-music" src="song.m4a" preload="auto"></audio>
+    <audio id="bg-music" src="song.m4a" preload="auto" playsinline></audio>
 
-    <div id="screen-init" class="screen active"><div style="font-size: 0.6rem; letter-spacing: 4px; opacity: 0.3;">TAP TO BEGIN</div></div>
+    <div id="screen-init" class="screen active" onclick="initiate()">
+        <div style="font-size: 0.6rem; letter-spacing: 4px; opacity: 0.3;">TAP TO BEGIN</div>
+    </div>
     
     <div id="screen-intro-1" class="screen"><div class="italian-serif">Hi bubs,</div></div>
     <div id="screen-intro-2" class="screen"><div class="italian-serif">let's take a look at our journey</div></div>
@@ -106,14 +107,16 @@
         ];
 
         function playZenBell() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            let osc = audioCtx.createOscillator();
-            let gain = audioCtx.createGain();
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.type = 'sine'; osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3);
-            osc.start(); osc.stop(audioCtx.currentTime + 3);
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = audioCtx.createOscillator();
+                let gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.type = 'sine'; osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3);
+                osc.start(); osc.stop(audioCtx.currentTime + 3);
+            } catch(e) { console.log("AudioContext blocked"); }
         }
 
         function createStars() {
@@ -136,13 +139,25 @@
             if (active) active.classList.add('fade-out');
             setTimeout(() => {
                 document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'fade-out'));
-                document.getElementById(id).classList.add('active');
+                const target = document.getElementById(id);
+                if(target) target.classList.add('active');
             }, 2500 + delay);
         }
 
         function initiate() {
             if (isStarted) return;
             isStarted = true;
+
+            // CRITICAL MOBILE FIX: Force interaction on all media
+            const music = document.getElementById('bg-music');
+            const vids = document.querySelectorAll('video');
+            
+            // Interaction "Pre-warm"
+            music.play().then(() => music.pause()).catch(e => console.log("Music warm-up failed"));
+            vids.forEach(v => {
+                v.play().then(() => v.pause()).catch(e => console.log("Video warm-up failed"));
+            });
+
             createStars();
             sw('screen-intro-1');
             setTimeout(() => sw('screen-intro-2'), 4500);
@@ -160,7 +175,7 @@
 
             v1.src = videoData[vidIdx].s;
             v1.playbackRate = 4.0;
-            v1.play();
+            v1.play().catch(e => console.log("Rewind play failed"));
 
             setTimeout(() => {
                 let interval = setInterval(() => {
@@ -191,10 +206,14 @@
         }
 
         function startArchive() {
-            let music = document.getElementById('bg-music');
+            const music = document.getElementById('bg-music');
             music.currentTime = 82;
             music.volume = 0.5;
-            music.play();
+            music.play().catch(e => {
+                // Second attempt if first failed
+                document.addEventListener('touchstart', () => music.play(), {once: true});
+            });
+
             load(0);
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'fade-out'));
             document.getElementById('screen-video').classList.add('active');
@@ -214,7 +233,7 @@
             nextV.onloadeddata = () => {
                 document.getElementById('month-label').innerText = `${String(idx + 1).padStart(2, '0')} / 13`;
                 document.getElementById('v-overlay').innerText = videoData[idx].t;
-                nextV.play();
+                nextV.play().catch(e => console.log("Archive play failed"));
                 nextV.classList.add('playing');
                 activeV.classList.remove('playing');
 
