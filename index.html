@@ -19,7 +19,7 @@
         .video-wrapper { position: absolute; inset: 0; z-index: 5; background: #000; }
         .blurred { filter: blur(25px) brightness(0.4); }
         
-        video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.5s ease-in-out; pointer-events: none; }
+        video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.5s ease-in-out; }
         video.playing { opacity: 1; }
 
         .overlay-text { 
@@ -116,7 +116,7 @@
                 gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3);
                 osc.start(); osc.stop(audioCtx.currentTime + 3);
-            } catch(e) {}
+            } catch(e) { console.log("AudioContext blocked"); }
         }
 
         function createStars() {
@@ -148,10 +148,14 @@
             if (isStarted) return;
             isStarted = true;
 
+            // CRITICAL MOBILE FIX: Force interaction on all media
+            const music = document.getElementById('bg-music');
             const vids = document.querySelectorAll('video');
+            
+            // Interaction "Pre-warm"
+            music.play().then(() => music.pause()).catch(e => console.log("Music warm-up failed"));
             vids.forEach(v => {
-                v.load(); // Force reset source
-                v.play().then(() => v.pause()).catch(() => {});
+                v.play().then(() => v.pause()).catch(e => console.log("Video warm-up failed"));
             });
 
             createStars();
@@ -171,7 +175,7 @@
 
             v1.src = videoData[vidIdx].s;
             v1.playbackRate = 4.0;
-            v1.play().catch(() => {});
+            v1.play().catch(e => console.log("Rewind play failed"));
 
             setTimeout(() => {
                 let interval = setInterval(() => {
@@ -183,7 +187,7 @@
                         nextV.src = videoData[vidIdx].s;
                         nextV.playbackRate = 4.0;
                         nextV.onloadeddata = () => {
-                            nextV.play().catch(() => {});
+                            nextV.play();
                             nextV.classList.add('playing');
                             currentV.classList.remove('playing');
                             currentV = nextV;
@@ -205,9 +209,9 @@
             const music = document.getElementById('bg-music');
             music.currentTime = 82;
             music.volume = 0.5;
-            music.play().catch(() => {
-                // Fallback for strict mobile browsers
-                window.addEventListener('touchstart', () => music.play(), {once: true});
+            music.play().catch(e => {
+                // Second attempt if first failed
+                document.addEventListener('touchstart', () => music.play(), {once: true});
             });
 
             load(0);
@@ -218,36 +222,23 @@
         function load(idx) {
             if (idx >= videoData.length) { runOutro(); return; }
             currentMonth = idx;
-            
             let v1 = document.getElementById('main-vid-1');
             let v2 = document.getElementById('main-vid-2');
             let activeV = v1.classList.contains('playing') ? v1 : v2;
             let nextV = v1.classList.contains('playing') ? v2 : v1;
 
-            const overlay = document.getElementById('v-overlay');
-            overlay.classList.remove('show-text');
-            
+            document.getElementById('v-overlay').classList.remove('show-text');
             nextV.src = videoData[idx].s;
-            nextV.load(); // Force mobile to recognize new source
-
-            nextV.oncanplay = () => {
+            
+            nextV.onloadeddata = () => {
                 document.getElementById('month-label').innerText = `${String(idx + 1).padStart(2, '0')} / 13`;
-                overlay.innerText = videoData[idx].t;
-                
-                // Explicitly call play for mobile
-                let playPromise = nextV.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        nextV.classList.add('playing');
-                        activeV.classList.remove('playing');
-                    }).catch(error => {
-                        console.log("Mobile playback failed, retrying...");
-                        nextV.play();
-                    });
-                }
+                document.getElementById('v-overlay').innerText = videoData[idx].t;
+                nextV.play().catch(e => console.log("Archive play failed"));
+                nextV.classList.add('playing');
+                activeV.classList.remove('playing');
 
-                setTimeout(() => overlay.classList.add('show-text'), 1200);
-                setTimeout(() => overlay.classList.remove('show-text'), 5500);
+                setTimeout(() => document.getElementById('v-overlay').classList.add('show-text'), 1200);
+                setTimeout(() => document.getElementById('v-overlay').classList.remove('show-text'), 5500);
 
                 let timer = setTimeout(() => { load(idx + 1); }, 7000);
                 nextV.onended = () => { clearTimeout(timer); load(idx + 1); };
