@@ -19,7 +19,7 @@
         .video-wrapper { position: absolute; inset: 0; z-index: 5; background: #000; }
         .blurred { filter: blur(25px) brightness(0.4); }
         
-        video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.5s ease-in-out; }
+        video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.5s ease-in-out; pointer-events: none; }
         video.playing { opacity: 1; }
 
         .overlay-text { 
@@ -148,15 +148,9 @@
             if (isStarted) return;
             isStarted = true;
 
-            const music = document.getElementById('bg-music');
             const vids = document.querySelectorAll('video');
-            
-            // Start music at 0 volume and seek to 1:22
-            music.volume = 0;
-            music.currentTime = 82;
-            music.play().catch(() => {});
-
             vids.forEach(v => {
+                v.load(); // Force reset source
                 v.play().then(() => v.pause()).catch(() => {});
             });
 
@@ -189,7 +183,7 @@
                         nextV.src = videoData[vidIdx].s;
                         nextV.playbackRate = 4.0;
                         nextV.onloadeddata = () => {
-                            nextV.play();
+                            nextV.play().catch(() => {});
                             nextV.classList.add('playing');
                             currentV.classList.remove('playing');
                             currentV = nextV;
@@ -209,16 +203,12 @@
 
         function startArchive() {
             const music = document.getElementById('bg-music');
-            // Fade in music from 0 to 0.5 when clips start
-            let vol = 0;
-            let fadeInterval = setInterval(() => {
-                if (vol < 0.5) {
-                    vol += 0.05;
-                    music.volume = vol;
-                } else {
-                    clearInterval(fadeInterval);
-                }
-            }, 200);
+            music.currentTime = 82;
+            music.volume = 0.5;
+            music.play().catch(() => {
+                // Fallback for strict mobile browsers
+                window.addEventListener('touchstart', () => music.play(), {once: true});
+            });
 
             load(0);
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'fade-out'));
@@ -228,23 +218,36 @@
         function load(idx) {
             if (idx >= videoData.length) { runOutro(); return; }
             currentMonth = idx;
+            
             let v1 = document.getElementById('main-vid-1');
             let v2 = document.getElementById('main-vid-2');
             let activeV = v1.classList.contains('playing') ? v1 : v2;
             let nextV = v1.classList.contains('playing') ? v2 : v1;
 
-            document.getElementById('v-overlay').classList.remove('show-text');
-            nextV.src = videoData[idx].s;
+            const overlay = document.getElementById('v-overlay');
+            overlay.classList.remove('show-text');
             
-            nextV.onloadeddata = () => {
-                document.getElementById('month-label').innerText = `${String(idx + 1).padStart(2, '0')} / 13`;
-                document.getElementById('v-overlay').innerText = videoData[idx].t;
-                nextV.play().catch(() => {});
-                nextV.classList.add('playing');
-                activeV.classList.remove('playing');
+            nextV.src = videoData[idx].s;
+            nextV.load(); // Force mobile to recognize new source
 
-                setTimeout(() => document.getElementById('v-overlay').classList.add('show-text'), 1200);
-                setTimeout(() => document.getElementById('v-overlay').classList.remove('show-text'), 5500);
+            nextV.oncanplay = () => {
+                document.getElementById('month-label').innerText = `${String(idx + 1).padStart(2, '0')} / 13`;
+                overlay.innerText = videoData[idx].t;
+                
+                // Explicitly call play for mobile
+                let playPromise = nextV.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        nextV.classList.add('playing');
+                        activeV.classList.remove('playing');
+                    }).catch(error => {
+                        console.log("Mobile playback failed, retrying...");
+                        nextV.play();
+                    });
+                }
+
+                setTimeout(() => overlay.classList.add('show-text'), 1200);
+                setTimeout(() => overlay.classList.remove('show-text'), 5500);
 
                 let timer = setTimeout(() => { load(idx + 1); }, 7000);
                 nextV.onended = () => { clearTimeout(timer); load(idx + 1); };
